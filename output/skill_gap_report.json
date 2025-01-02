@@ -1,0 +1,12 @@
+{
+    "matched_skills": [
+        "python",
+        "java"
+    ],
+    "missing_skills": [
+        "machine learning",
+        "docker",
+        "kubernetes",
+        "aws"
+    ]
+}

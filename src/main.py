@@ -7,14 +7,14 @@ from analysis.gap_analysis import analyze_skill_gap
 from reports.report_generator import generate_report
 
 def main():
-
+    #step 1: parse and preprocess the resume
     current_dir = os.path.dirname(__file__)
     pdf_path = os.path.join(current_dir, "..", "assets", "Jake_s_Resume.pdf")
     parsed_text = parse_resume_pdf(pdf_path)
     cleaned_text = preprocess_text(parsed_text)
-
+    #step 2: load skill dictionary
     skill_list = load_skill_dictionary()
-
+    #step 3: extract skills from the resume
     resume_skills = extract_skills_from_text(cleaned_text,skill_list)
 
      # Step 4: Simulate job description (or parse it like the résumé)
@@ -29,10 +29,10 @@ def main():
     # Step 5: Analyze the skill gap
     analysis = analyze_skill_gap(resume_skills,job_skills)
     
-    
+    # Step 6: Generate and print the report
+    report = generate_report(analysis,output_file ="output/skill_gap_report.json")
+    print (report)
 
-    print("Matched Skills:", analysis["matched_skills"])
-    print("Missing Skills:", analysis["missing_skills"])
-
+   
 if __name__ == "__main__":
     main()

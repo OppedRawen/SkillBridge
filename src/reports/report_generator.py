@@ -1,5 +1,5 @@
 import json
-
+import os
 
 def generate_report(analysis:dict,output_file:str = None):
     """
@@ -12,6 +12,15 @@ def generate_report(analysis:dict,output_file:str = None):
     Returns:
         str: A formatted string of the report for console output.
     """
+    if output_file:
+        output_dir = os.path.dirname(output_file)  # Extract directory from the file path
+        if output_dir and not os.path.exists(output_dir):  # Check if directory exists
+            os.makedirs(output_dir,exist_ok=True)  # Create the directory if it doesn't exist
+            
+    analysis["matched_skills"] = list(analysis["matched_skills"])
+    analysis["missing_skills"] = list(analysis["missing_skills"])
+
+    # Generate the report
     matched = ", ".join(sorted(analysis["matched_skills"]))
     missing = ", ".join(sorted(analysis["missing_skills"]))
 
