@@ -7,8 +7,8 @@ def load_skill_dictionary():
     skill_file_path = os.path.join(data_dir, 'skills.json')
 
     with open(skill_file_path,'r', encoding='utf-8') as f:
-        skills = json.load(f)
-    return skills
+        skills_data = json.load(f)
+    return skills_data["skills"]
 
 def preprocess_text(text:str)->str:
     text = text.lower()
@@ -17,17 +17,17 @@ def preprocess_text(text:str)->str:
 
 def extract_skills_from_text(text: str, skills: list) -> set:
     """
-    Return a set of skills found in the text by simple substring matching.
-    Example: If text contains 'experience with python and docker', 
-    and skills = ['python','docker'], we return {'python','docker'}.
+    Enhanced skill extractor using 'name' and 'related_terms' from the skill dictionary.
     """
     found_skills = set()
-    # Lowercase text for matching
-    processed_text = preprocess_text(text)
+    processed_text = text.lower()
 
-    # Iterate through each skill in our dictionary
-    for skill in skills:
-        skill = skill.strip().lower()  # ensure skill is lowercase
-        if skill in processed_text:
-            found_skills.add(skill)
+    for skill_entry in skills:
+        skill_name = skill_entry["name"].lower()
+        related_terms = [term.lower() for term in skill_entry.get("related_terms", [])]
+
+        # Check both skill name and related terms
+        if skill_name in processed_text or any(term in processed_text for term in related_terms):
+            found_skills.add(skill_name)
+
     return found_skills

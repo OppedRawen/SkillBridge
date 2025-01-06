@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from extraction.skill_extractor import load_skill_dictionary, extract_skills_from_text
 from analysis.gap_analysis import analyze_skill_gap
 import PyPDF2
+from models.skill_matcher import extract_skills_with_bert
+
 app = FastAPI()
 
 # ✅ CORS Configuration (Add this part)
@@ -22,7 +24,7 @@ def root():
 async def analyze_skills(resume: UploadFile = File(...), job_description: str = Form(...)):
     # Load the skill dictionary
     skill_list = load_skill_dictionary()
-
+    print("Loaded skill list:", skill_list) 
     # ✅ Read PDF using PyPDF2
     resume_text = ""
     try:
@@ -31,16 +33,12 @@ async def analyze_skills(resume: UploadFile = File(...), job_description: str = 
             resume_text += page.extract_text() + "\n"
     except Exception as e:
         return {"error": f"Failed to extract text from PDF: {str(e)}"}
+    
 
     # Extract skills
-    resume_skills = extract_skills_from_text(resume_text, skill_list)
-    job_skills = extract_skills_from_text(job_description, skill_list)
-
-    # Analyze skill gap
-    result = analyze_skill_gap(resume_skills, job_skills)
-
+    matched_skills, missing_skills = extract_skills_with_bert(resume_text, job_description, skill_list)
     # Return the results
     return {
-        "matched_skills": list(result["matched_skills"]),
-        "missing_skills": list(result["missing_skills"])
+        "matched_skills": list(matched_skills),
+        "missing_skills": list(missing_skills),
     }
