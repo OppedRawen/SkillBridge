@@ -124,36 +124,6 @@
           "name": "financial modeling",
           "category": "finance",
           "related_terms": ["excel modeling", "forecasting", "valuation", "cash flow analysis"]
-      },
-      {
-          "name": "risk management",
-          "category": "finance",
-          "related_terms": ["credit risk", "market risk", "operational risk"]
-      },
-      {
-          "name": "blockchain",
-          "category": "technology",
-          "related_terms": ["smart contracts", "ethereum", "hyperledger", "solidity"]
-      },
-      {
-          "name": "3d modeling",
-          "category": "design",
-          "related_terms": ["blender", "autocad", "maya", "3ds max"]
-      },
-      {
-          "name": "graphic design",
-          "category": "design",
-          "related_terms": ["photoshop", "illustrator", "canva"]
-      },
-      {
-          "name": "welding",
-          "category": "skilled trades",
-          "related_terms": ["mig welding", "tig welding", "arc welding"]
-      },
-      {
-          "name": "carpentry",
-          "category": "skilled trades",
-          "related_terms": ["woodworking", "framing", "finish carpentry"]
       }
   ]
 }

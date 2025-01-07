@@ -1,4 +1,3 @@
- # backend/src/models/skill_matcher.py
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -21,36 +20,75 @@ def calculate_similarity(embedding1, embedding2):
     return similarity
 
 def extract_skills_with_bert(resume_text, job_description, skill_list):
+    matched_skills = set()
+    missing_skills = set()
+
+    # Generate embeddings for each token separately
+    resume_tokens = resume_text.split()
+    job_tokens = job_description.split()
+    
+    resume_embeddings = generate_embeddings(resume_tokens)
+    job_embeddings = generate_embeddings(job_tokens)
+
+    # Compare against each skill in the skill dictionary
+    for skill_entry in skill_list:
+        if isinstance(skill_entry, dict) and "name" in skill_entry:
+            skill_name = skill_entry["name"]
+            skill_embedding = generate_embeddings([skill_name])[0]
+            
+            # Calculate similarity with individual tokens instead of full vectors
+            job_similarity = max(calculate_similarity(skill_embedding, emb) for emb in job_embeddings)
+            resume_similarity = max(calculate_similarity(skill_embedding, emb) for emb in resume_embeddings)
+
+            print(f"Skill: {skill_name} | Job Similarity: {job_similarity:.4f} | Resume Similarity: {resume_similarity:.4f}")
+
+            if job_similarity > 0.65 and resume_similarity > 0.65:
+                matched_skills.add(skill_name)
+            else:
+                missing_skills.add(skill_name)
+
+    return matched_skills, missing_skills
     """
     Extract and compare skills using BERT embeddings.
-    - Convert both texts to embeddings.
-    - Compare against skill dictionary using semantic similarity.
+    - Break down texts into words for better comparison.
+    - Compare each skill term individually against words in the resume and job description.
     """
     matched_skills = set()
     missing_skills = set()
 
-    # Generate embeddings for the entire résumé and job description
-    resume_embedding = generate_embeddings([resume_text])[0]
-    job_embedding = generate_embeddings([job_description])[0]
+    # Tokenize (split by words) instead of using sentences
+    resume_tokens = resume_text.split()
+    job_tokens = job_description.split()
+
+    # Generate embeddings for the tokenized texts
+    resume_embeddings = generate_embeddings(resume_tokens)
+    job_embeddings = generate_embeddings(job_tokens)
 
     # Compare against each skill in the skill dictionary
     for skill_entry in skill_list:
-        if isinstance(skill_entry,dict) and "name" in skill_entry:
+        if isinstance(skill_entry, dict) and "name" in skill_entry:
+            all_skill_terms = [skill_entry["name"]] + skill_entry.get("related_terms", [])
+            skill_embeddings = generate_embeddings(all_skill_terms)
 
-            skill_name = skill_entry["name"]
-            skill_embedding = generate_embeddings([skill_name])[0]
-        
-        # Calculate similarity between skill and the job description/résumé
-            job_similarity = calculate_similarity(skill_embedding, job_embedding)
-            resume_similarity = calculate_similarity(skill_embedding, resume_embedding)
+            skill_matched = False  # Flag to avoid redundant matching
 
-            # If skill appears relevant in both with a high similarity score
-            if job_similarity > 0.75 and resume_similarity > 0.75:
-                matched_skills.add(skill_name)
-            else:
-                missing_skills.add(skill_name)
-        else:
-            print("Invalid skill entry:", skill_entry)
-        
+            for skill_embedding in skill_embeddings:
+                # Compare against every word in the resume and job description
+                for token_embedding in resume_embeddings + job_embeddings:
+                    similarity = calculate_similarity(skill_embedding, token_embedding)
+                    
+                    # Debugging Output (Optional for Testing)
+                    print(f"Testing skill: {skill_entry['name']}, Similarity: {similarity:.4f}")
+
+                    if similarity > 0.65:  # Lower threshold for word-level comparison
+                        matched_skills.add(skill_entry["name"])
+                        skill_matched = True
+                        break  # Stop comparing once a match is found
+                
+                if skill_matched:
+                    break  # Stop checking other terms if a match is already found
+
+            if not skill_matched:
+                missing_skills.add(skill_entry["name"])
 
     return matched_skills, missing_skills

@@ -24,7 +24,7 @@ def root():
 async def analyze_skills(resume: UploadFile = File(...), job_description: str = Form(...)):
     # Load the skill dictionary
     skill_list = load_skill_dictionary()
-    print("Loaded skill list:", skill_list) 
+
     # ✅ Read PDF using PyPDF2
     resume_text = ""
     try:
@@ -33,7 +33,7 @@ async def analyze_skills(resume: UploadFile = File(...), job_description: str = 
             resume_text += page.extract_text() + "\n"
     except Exception as e:
         return {"error": f"Failed to extract text from PDF: {str(e)}"}
-    
+    print(resume_text) 
 
     # Extract skills
     matched_skills, missing_skills = extract_skills_with_bert(resume_text, job_description, skill_list)
