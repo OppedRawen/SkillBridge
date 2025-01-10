@@ -8,7 +8,7 @@ def load_skill_dictionary():
 
     with open(skill_file_path,'r', encoding='utf-8') as f:
         skills = json.load(f)
-    return skills
+    return skills["skills"]
 
 def preprocess_text(text:str)->str:
     text = text.lower()
@@ -26,8 +26,14 @@ def extract_skills_from_text(text: str, skills: list) -> set:
     processed_text = preprocess_text(text)
 
     # Iterate through each skill in our dictionary
-    for skill in skills:
-        skill = skill.strip().lower()  # ensure skill is lowercase
-        if skill in processed_text:
-            found_skills.add(skill)
+    for skill_entry in skills:
+        # Check the main skill name
+        if skill_entry["name"].lower() in processed_text:
+            found_skills.add(skill_entry["name"])
+
+        # Check related terms
+        for related_term in skill_entry.get("related_terms", []):
+            if related_term.lower() in processed_text:
+                found_skills.add(skill_entry["name"])  # Add the main skill name for consistency
+
     return found_skills
