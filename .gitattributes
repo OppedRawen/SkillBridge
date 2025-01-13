@@ -1,1 +1,2 @@
 *.zip filter=lfs diff=lfs merge=lfs -text
+Backend/src/models/fine_tuned_sentence_transformer/** filter=lfs diff=lfs merge=lfs -text
