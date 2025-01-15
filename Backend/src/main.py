@@ -1,6 +1,11 @@
 from fastapi import FastAPI, UploadFile, Form, File
 from fastapi.middleware.cors import CORSMiddleware
-
+from extraction.skill_extractor import load_skill_dictionary
+from parsing.resume_parser import parse_resume_pdf
+from models.model_loader import load_ner_model, load_sentence_transformer
+from pydantic import BaseModel
+from sentence_transformers import util
+import PyPDF2
 import os
 
 app = FastAPI()

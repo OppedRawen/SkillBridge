@@ -1,4 +1,4 @@
- import concurrent.futures
+import concurrent.futures
 import json
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer, util
