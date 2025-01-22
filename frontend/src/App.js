@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import ResumeAnalyzer from './pages/ResumeAnalyzer';
 import Recommendations from './pages/Recommendations';
 import JobSearch from './pages/Jobsearch';
+import Jobanalyzer from './pages/Jobanalyzer';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Route path="/analyze" element={<ResumeAnalyzer />} />
           <Route path="/recommendations" element={<Recommendations />} />
           <Route path="/jobs" element={<JobSearch />} />
+          <Route path="/jobanalyze" element={<Jobanalyzer />} />
         </Routes>
       </div>
     </Router>

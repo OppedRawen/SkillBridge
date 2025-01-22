@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import resume_routes
-
+from routers import job_routes
 def create_app():
     app = FastAPI(title="Skill Gap Analysis API")
 
@@ -16,6 +16,7 @@ def create_app():
 
     # Include routers
     app.include_router(resume_routes.router, prefix="/resumes", tags=["Resumes"])
+    app.include_router(job_routes.router, prefix="/jobs", tags=["Jobs"])
 
     return app
 
