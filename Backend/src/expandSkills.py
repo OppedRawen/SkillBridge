@@ -74,4 +74,3 @@ for skill in expanded_skills:
 with open("../data/expanded_skills.json", "w") as f:
     json.dump(skills_data, f, indent=4)
 
-print(f"✅ Hybrid approach complete. {len(expanded_skills)} new skills added to expanded_skills.json.")

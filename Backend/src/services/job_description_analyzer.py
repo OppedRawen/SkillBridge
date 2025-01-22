@@ -14,8 +14,15 @@ def compute_skill_weight(doc, skill_indices):
     Example function that checks the surrounding tokens
     for words like 'must' or 'required'. If found, it increases weight.
     """
-    keywords_required = {"must", "required", "mandatory"}
-    keywords_preferred = {"preferred", "nice-to-have"}
+    keywords_required = {
+    "must", "required", "mandatory", "essential", "needed",
+    "necessity", "expertise", "strong", "proficiency", 
+    # etc...
+    }
+    keywords_preferred = {
+    "preferred", "nice-to-have", "plus", "beneficial", 
+    "bonus", "familiarity", "desire"
+    }
 
     base_weight = 1.0
     window_size = 5  # how many tokens to look around
