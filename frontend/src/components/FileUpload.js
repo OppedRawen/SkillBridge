@@ -31,7 +31,7 @@ const ResumeAnalyzer = () => {
         formData.append('job_description', jobDescription);
 
         try {
-            const response = await axios.post('http://127.0.0.1:8000/analyze_resume', formData);
+            const response = await axios.post('http://127.0.0.1:8000/resumes/analyze', formData);
             setResults(response.data);
         } catch (error) {
             console.error('Error uploading data:', error);
