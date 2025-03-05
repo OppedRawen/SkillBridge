@@ -76,14 +76,14 @@ const Jobanalyzer = () => {
    {/* Results Section */}
 {results && (
   <div className="mt-6">
-    <h3 className="text-xl font-semibold mb-2">Weighted Job Skills:</h3>
+    <h3 className="text-xl font-semibold mb-2">Recommendations</h3>
     <ul>
       {/* Convert results (object) into an array of [key, value] pairs */}
-      {Object.entries(results).map(([skill, weight]) => (
-        <li key={skill}>
-          {skill} (weight: {weight.toFixed(2)})
-        </li>
-      ))}
+      <p>
+        {
+          results.llm_output
+        }
+      </p>
     </ul>
   </div>
 )}
