@@ -10,10 +10,7 @@ nlp = spacy.load("en_core_web_lg")
 skill_extractor = SkillExtractor(nlp, SKILL_DB, PhraseMatcher)
 
 def compute_skill_weight(doc, skill_indices):
-    """
-    Example function that checks the surrounding tokens
-    for words like 'must' or 'required'. If found, it increases weight.
-    """
+
     keywords_required = {
     "must", "required", "mandatory", "essential", "needed",
     "necessity", "expertise", "strong", "proficiency", 
