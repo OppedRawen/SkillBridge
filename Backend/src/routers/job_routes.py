@@ -75,21 +75,21 @@ async def job_analyzer(
                 "llm_output": "Our AI system encountered an initialization error. Please try again later."
             }
         
-        # Step 2: Save the uploaded file
+                # Step 2: Save the uploaded file
         logger.info("Saving temporary file...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             temp_file.write(await file.read())
             temp_path = temp_file.name
         logger.info(f"File saved to {temp_path}")
-        
+
         # Step 3: Process the documents
         try:
             logger.info("Processing the resume PDF...")
-            # We'll directly use the utilities rather than go through agents for this step
-            resume_text = extract_text_from_pdf({"file": open(temp_path, 'rb')})
+            # Use the file path directly instead of creating a dict
+            resume_text = extract_text_from_pdf(temp_path)
             if resume_text.startswith("Error"):
                 raise ValueError(f"PDF extraction failed: {resume_text}")
-                
+                    
             logger.info(f"Resume text extracted: {len(resume_text)} characters")
             logger.debug(f"Resume text sample: {resume_text[:200]}...")
             

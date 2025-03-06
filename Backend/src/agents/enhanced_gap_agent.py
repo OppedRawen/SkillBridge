@@ -171,41 +171,63 @@ class EnhancedGapAnalyzer:
         Returns:
             list: List of embeddings
         """
-        embeddings = []
+        if not skill_texts:
+            return []
+            
+        embeddings = [None] * len(skill_texts)  # Initialize with None
         new_skills = []
-        new_texts = []
+        new_skill_indices = []
         
         # Check for existing embeddings in the database
-        for skill in skill_texts:
+        for i, skill in enumerate(skill_texts):
             skill_id = f"{skill}_{source_type}"
             result = self.vector_db.get_skill(skill_id)
             
             if result:
                 _, embedding, _ = result
-                embeddings.append(embedding)
+                embeddings[i] = embedding
             else:
                 new_skills.append(skill)
-                embeddings.append(None)  # Placeholder
+                new_skill_indices.append(i)
         
-        # Generate new embeddings if needed
+        # Generate new embeddings if needed, in smaller batches
         if new_skills:
-            new_embeddings = self.embedding_service.get_embeddings(new_skills)
-            
-            # Update the database and embeddings list
-            for i, skill in enumerate(new_skills):
-                skill_id = f"{skill}_{source_type}"
-                embedding = new_embeddings[i]
+            # Process in batches of 10 to reduce memory usage
+            batch_size = 10
+            for i in range(0, len(new_skills), batch_size):
+                batch = new_skills[i:i+batch_size]
+                batch_indices = new_skill_indices[i:i+batch_size]
                 
-                # Add to database
-                self.vector_db.add_or_update_skill(
-                    skill_id, 
-                    skill, 
-                    embedding,
-                    {"source_type": source_type}
-                )
+                logger.info(f"Generating embeddings for batch of {len(batch)} skills")
+                batch_embeddings = self.embedding_service.get_embeddings(batch)
                 
-                # Find the index in the original list
-                original_index = skill_texts.index(skill)
-                embeddings[original_index] = embedding
+                # Update the database and embeddings list
+                for j, (skill, skill_index) in enumerate(zip(batch, batch_indices)):
+                    if j < len(batch_embeddings):  # Safeguard against index errors
+                        embedding = batch_embeddings[j]
+                        
+                        if embedding is not None:
+                            skill_id = f"{skill}_{source_type}"
+                            
+                            # Add to database
+                            try:
+                                self.vector_db.add_or_update_skill(
+                                    skill_id, 
+                                    skill, 
+                                    embedding,
+                                    {"source_type": source_type}
+                                )
+                            except Exception as e:
+                                logger.error(f"Error adding skill to vector DB: {str(e)}")
+                            
+                            # Update the embeddings list
+                            embeddings[skill_index] = embedding
+        
+        # Filter out any None values that might remain
+        for i, embedding in enumerate(embeddings):
+            if embedding is None:
+                logger.warning(f"Failed to get embedding for skill: {skill_texts[i]}")
+                # Replace with a zero vector of the right size (384 for all-MiniLM-L6-v2)
+                embeddings[i] = np.zeros(384)
         
         return embeddings
