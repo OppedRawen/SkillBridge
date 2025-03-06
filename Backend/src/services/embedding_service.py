@@ -23,8 +23,12 @@ class EmbeddingService:
         """
         try:
             logger.info(f"Loading embedding model: {model_name}")
-            self.model = SentenceTransformer(model_name)
-            logger.info("Embedding model loaded successfully")
+            
+            # Force CPU usage to avoid CUDA/GPU memory issues
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  
+            self.model = SentenceTransformer(model_name, device="cpu")
+            
+            logger.info("Embedding model loaded successfully on CPU")
         except Exception as e:
             logger.error(f"Error loading embedding model: {str(e)}")
             raise
@@ -44,7 +48,7 @@ class EmbeddingService:
             return None
             
         try:
-            return self.model.encode(text)
+            return self.model.encode(text, show_progress_bar=False)
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             return None
@@ -71,7 +75,8 @@ class EmbeddingService:
             return np.array([])
             
         try:
-            return self.model.encode(valid_texts)
+            # Use smaller batch size and disable progress bar to reduce memory usage
+            return self.model.encode(valid_texts, batch_size=8, show_progress_bar=False)
         except Exception as e:
             logger.error(f"Error generating embeddings: {str(e)}")
             return np.array([])
