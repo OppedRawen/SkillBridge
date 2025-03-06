@@ -4,8 +4,10 @@ import tempfile
 import os
 import traceback
 from utils.pdf_utils import extract_text_from_pdf
-from services.job_description_analyzer import analyze_job_description
-from services.resume_analyzer import analyze_resume
+
+
+from services.optimized_job_analyzer import analyze_job_description, analyze_resume
+
 from agents.enhanced_gap_agent import EnhancedGapAnalyzer
 from agents.resource_agent import get_learning_resources
 
