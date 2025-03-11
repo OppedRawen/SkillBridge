@@ -4,7 +4,7 @@ import tempfile
 import os
 import traceback
 from utils.pdf_utils import extract_text_from_pdf
-
+from utils.numpy_converter import convert_numpy_to_python
 
 from services.optimized_job_analyzer import analyze_job_description, analyze_resume
 
@@ -68,14 +68,14 @@ async def job_analyzer(
             
         except Exception as agent_error:
             logger.error(f"Error creating agents: {str(agent_error)}")
-            return {
+            return convert_numpy_to_python({
                 "status": "error",
                 "message": "Failed to initialize agents",
                 "error": str(agent_error),
                 "llm_output": "Our AI system encountered an initialization error. Please try again later."
-            }
+            })
         
-                # Step 2: Save the uploaded file
+        # Step 2: Save the uploaded file
         logger.info("Saving temporary file...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             temp_file.write(await file.read())
@@ -163,8 +163,8 @@ async def job_analyzer(
                 os.unlink(temp_path)
                 temp_path = None
             
-            # Return the complete analysis
-            return {
+            # Create the response data
+            response_data = {
                 "status": "success",
                 "file_name": file.filename,
                 "analysis_type": analysis_type,
@@ -179,6 +179,9 @@ async def job_analyzer(
                 "llm_output": learning_resources
             }
             
+            # Convert NumPy types to Python types before returning
+            return convert_numpy_to_python(response_data)
+            
         except Exception as process_error:
             logger.error(f"Error processing documents: {str(process_error)}")
             logger.error(traceback.format_exc())
@@ -191,12 +194,12 @@ async def job_analyzer(
                     pass
                 temp_path = None
                 
-            return {
+            return convert_numpy_to_python({
                 "status": "error",
                 "message": "Failed to process documents",
                 "error": str(process_error),
                 "llm_output": "An error occurred while processing your documents. Please ensure your resume is a valid PDF and try again."
-            }
+            })
         
     except Exception as e:
         error_details = traceback.format_exc()
@@ -224,11 +227,14 @@ async def find_similar_skills(skill: str, limit: int = 5):
         gap_analyzer = EnhancedGapAnalyzer()
         similar_skills = gap_analyzer.find_similar_skills(skill, limit)
         
-        return {
+        # Convert NumPy types to Python types before returning
+        result = {
             "status": "success",
             "skill": skill,
             "similar_skills": similar_skills
         }
+        return convert_numpy_to_python(result)
+        
     except Exception as e:
         logger.error(f"Error finding similar skills: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to find similar skills: {str(e)}")
