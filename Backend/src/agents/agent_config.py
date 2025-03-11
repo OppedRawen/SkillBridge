@@ -55,7 +55,7 @@ def create_agents():
         
         # Create code execution config to disable Docker
         code_execution_config = {
-            "use_docker": False,  # This disables the Docker requirement
+            "use_docker": False,  
             "last_n_messages": 2,
             "work_dir": "workspace"
         }
@@ -65,14 +65,14 @@ def create_agents():
             name="UserProxy",
             human_input_mode="NEVER",
             max_consecutive_auto_reply=10,
-            code_execution_config=code_execution_config  # Add this to disable Docker
+            code_execution_config=code_execution_config 
         )
         logger.info("Created user proxy agent")
         
         # Define LLM config that includes both the model config and code execution config
         llm_config = {
             "config_list": config_list,
-            "code_execution_config": code_execution_config  # Add this to disable Docker
+            "code_execution_config": code_execution_config  
         }
         
         # Document processing agent
