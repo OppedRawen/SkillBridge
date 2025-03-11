@@ -2,9 +2,8 @@ from pdfminer.high_level import extract_text
 import tempfile
 import os
 import logging
-import platform
-import time
 
+# Configure logging
 logger = logging.getLogger(__name__)
 
 def extract_text_from_pdf(pdf_file_or_path):
@@ -12,52 +11,64 @@ def extract_text_from_pdf(pdf_file_or_path):
     Extract text content from a PDF file.
     
     Args:
-        pdf_file_or_path: Either a file path string or an open file object
+        pdf_file_or_path: UploadFile from FastAPI, file-like object, or a dictionary containing a file
         
     Returns:
         str: Extracted text content
     """
     temp_path = None
+    
     try:
+        logger.info("Extracting text from PDF file object")
+        
         # Handle different input types
-        if isinstance(pdf_file_or_path, str):
-            # It's a file path
-            logger.info(f"Extracting text from PDF path: {pdf_file_or_path}")
-            text = extract_text(pdf_file_or_path)
-            return text
+        if isinstance(pdf_file_or_path, dict) and 'file' in pdf_file_or_path:
+            # If it's a dictionary with a 'file' key, extract the file object
+            file_obj = pdf_file_or_path['file']
         else:
-            # Assume it's an open file object
-            logger.info(f"Extracting text from PDF file object")
+            # Otherwise assume it's already a file object or UploadFile
+            file_obj = pdf_file_or_path
             
-            # Create a unique temporary file
+        # Check if it's a file-like object with a read method
+        if hasattr(file_obj, 'read'):
+            # Save content to a temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                content = pdf_file_or_path.read()
+                content = file_obj.read()
                 temp_file.write(content)
                 temp_path = temp_file.name
-            
-            logger.info(f"Created temporary file: {temp_path}")
-            
-            # Windows compatibility: close file and wait a moment
-            if platform.system() == 'Windows':
-                time.sleep(0.1)  # Short delay to ensure file is released
-            
-            # Extract text from the temporary file
-            text = extract_text(temp_path)
-            
-            return text
-            
+                
+        # Check if it's a path string
+        elif isinstance(pdf_file_or_path, str) and os.path.exists(pdf_file_or_path):
+            temp_path = pdf_file_or_path
+        else:
+            raise ValueError(f"Unsupported input type: {type(pdf_file_or_path)}")
+        
+        # Extract text from the PDF
+        text = extract_text(temp_path)
+        
+        # Check if extraction was successful
+        if not text or len(text.strip()) == 0:
+            logger.warning(f"Extracted empty text from PDF")
+            text = "No text could be extracted from this PDF. Please try a different file."
+        else:
+            logger.info(f"Successfully extracted {len(text)} characters from PDF")
+        
+        # Clean up the temporary file if we created one
+        if temp_path and pdf_file_or_path != temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+            logger.debug(f"Deleted temporary file: {temp_path}")
+        
+        return text
+        
     except Exception as e:
         logger.error(f"Error extracting text from PDF: {str(e)}")
-        raise Exception(f"Error extracting text from PDF: {str(e)}")
-    finally:
-        # Clean up in the finally block to ensure it runs
+        
+        # Clean up the temporary file if it exists
         if temp_path and os.path.exists(temp_path):
             try:
-                # Wait a moment on Windows before trying to delete
-                if platform.system() == 'Windows':
-                    time.sleep(0.1)
-                    
                 os.unlink(temp_path)
-                logger.info(f"Deleted temporary file: {temp_path}")
-            except Exception as cleanup_error:
-                logger.warning(f"Failed to delete temporary file: {str(cleanup_error)}")
+            except:
+                pass
+                
+        # Return error message instead of raising exception
+        return f"Error extracting text from PDF: {str(e)}"
