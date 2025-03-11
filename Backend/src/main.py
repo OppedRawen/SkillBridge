@@ -4,6 +4,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from routers import job_routes as jobs
 from services.optimized_job_analyzer import skill_extractor_instance
+from services.optimized_vector_database import OptimizedVectorDatabase
+from services.embedding_service import EmbeddingService
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +20,15 @@ workspace_dir = "workspace"
 if not os.path.exists(workspace_dir):
     os.makedirs(workspace_dir)
     logger.info(f"Created workspace directory: {workspace_dir}")
+
+# Vector DB cache directory
+vector_cache_dir = "vector_cache"
+if not os.path.exists(vector_cache_dir):
+    os.makedirs(vector_cache_dir)
+    logger.info(f"Created vector cache directory: {vector_cache_dir}")
+
+# Initialize global services
+global_services = {}
 
 # Initialize the FastAPI app
 app = FastAPI(title="Skill Bridge API")
@@ -54,11 +65,33 @@ async def startup_event():
     """Initialize resources when the application starts."""
     logger.info("Starting application initialization...")
     
-    # Pre-initialize the skill extractor singleton
-    # This forces initialization during startup instead of on first request
-    _ = skill_extractor_instance
+    try:
+        # Pre-initialize the skill extractor singleton
+        # This forces initialization during startup instead of on first request
+        _ = skill_extractor_instance
+        logger.info("Skill Extractor initialized successfully")
+        
+        # Pre-initialize embedding service
+        global_services['embedding_service'] = EmbeddingService()
+        logger.info("Embedding Service initialized successfully")
+        
+        # Pre-initialize vector database
+        global_services['vector_db'] = OptimizedVectorDatabase()
+        logger.info("Vector Database initialized successfully")
+        
+        logger.info("Application initialization complete")
+    except Exception as e:
+        logger.error(f"Error during application initialization: {str(e)}")
+        logger.error("Application will continue, but some features may not work correctly")
+
+# Application shutdown event
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources when the application shuts down."""
+    logger.info("Cleaning up resources...")
     
-    logger.info("Application initialization complete")
+    # Any cleanup needed for vector DB or other resources
+    logger.info("Application shutdown complete")
 
 if __name__ == "__main__":
     import uvicorn
