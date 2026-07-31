@@ -1,23 +1,17 @@
 import logging
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-import tempfile
 import os
+import tempfile
 import traceback
-from utils.pdf_utils import extract_text_from_pdf
-from utils.numpy_converter import convert_numpy_to_python
 
-from services.optimized_job_analyzer import analyze_job_description, analyze_resume
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from agents.enhanced_gap_agent import EnhancedGapAnalyzer
+from agents.gap_agent import identify_skill_gaps
 from agents.resource_agent import get_learning_resources
+from services.optimized_job_analyzer import analyze_job_description, analyze_resume
+from utils.numpy_converter import convert_numpy_to_python
+from utils.pdf_utils import extract_text_from_pdf
 
-# Import agent modules
-from agents.agent_config import create_agents
-from agents.document_agent import register_document_agent_functions
-from agents.skill_agent import register_skill_agent_functions
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -26,215 +20,168 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+# Lazy singleton — loaded on first semantic request so startup stays fast
+_semantic_analyzer: EnhancedGapAnalyzer | None = None
+
+
+def _get_semantic_analyzer() -> EnhancedGapAnalyzer:
+    global _semantic_analyzer
+    if _semantic_analyzer is None:
+        logger.info("Loading sentence-transformer model for semantic analysis…")
+        _semantic_analyzer = EnhancedGapAnalyzer(similarity_threshold=0.7)
+    return _semantic_analyzer
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
 @router.get("/test")
 async def test_endpoint():
-    """Simple test endpoint to verify the API is working."""
+    """Health-check: confirms the Jobs router is reachable."""
     return {"message": "Jobs API is working!"}
+
 
 @router.post("/jobAnalyzer")
 async def job_analyzer(
     file: UploadFile = File(...),
     job_description: str = Form(...),
-    use_semantic: bool = Form(True)
+    use_semantic: bool = Form(True),
 ):
     """
-    Analyze a job description and resume for skill gaps and provide learning resources.
-    
-    Args:
-        file: The resume PDF file
-        job_description: The job description text
-        use_semantic: Whether to use semantic matching (vector embeddings) for skill comparison
-    """
-    temp_path = None
-    try:
-        logger.info(f"Received job analysis request: file={file.filename}, job desc length={len(job_description)}")
-        logger.info(f"Semantic matching enabled: {use_semantic}")
-        
-        # Step 1: Create agents
-        try:
-            logger.info("Creating AutoGen agents...")
-            user_proxy, document_agent, skill_agent, gap_agent, resource_agent, manager = create_agents()
-            logger.info("Agents created successfully")
-            
-            # Register functions with the user proxy
-            register_document_agent_functions(user_proxy)
-            register_skill_agent_functions(user_proxy)
-            
-            # Initialize the enhanced gap analyzer
-            enhanced_gap_analyzer = EnhancedGapAnalyzer(similarity_threshold=0.7)
-            enhanced_gap_analyzer.register_functions(user_proxy)
-            
-            logger.info("All functions registered with user proxy")
-            
-        except Exception as agent_error:
-            logger.error(f"Error creating agents: {str(agent_error)}")
-            return convert_numpy_to_python({
-                "status": "error",
-                "message": "Failed to initialize agents",
-                "error": str(agent_error),
-                "llm_output": "Our AI system encountered an initialization error. Please try again later."
-            })
-        
-        # Step 2: Save the uploaded file
-        logger.info("Saving temporary file...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(await file.read())
-            temp_path = temp_file.name
-        logger.info(f"File saved to {temp_path}")
+    Analyse a resume against a job description and return a skill-gap breakdown.
 
-        # Step 3: Process the documents
-        try:
-            logger.info("Processing the resume PDF...")
-            # Use the file path directly instead of creating a dict
-            resume_text = extract_text_from_pdf(temp_path)
-            if resume_text.startswith("Error"):
-                raise ValueError(f"PDF extraction failed: {resume_text}")
-                    
-            logger.info(f"Resume text extracted: {len(resume_text)} characters")
-            logger.debug(f"Resume text sample: {resume_text[:200]}...")
-            
-            # Process job description (just use the text as is)
-            processed_job_description = job_description
-            logger.info(f"Job description processed: {len(processed_job_description)} characters")
-            
-            # Extract skills from job description
-            logger.info("Extracting skills from job description...")
-            job_skills = analyze_job_description(processed_job_description)
-            
-            if not job_skills:
-                logger.warning("No skills found in job description!")
-                job_skills = {}  # Ensure it's an empty dict, not None
-                
-            logger.info(f"Job skills extracted: {len(job_skills)} skills found")
-            logger.debug(f"Job skills: {job_skills}")
-            
-            # Extract skills from resume
-            logger.info("Extracting skills from resume...")
-            resume_skills = analyze_resume(resume_text)
-            
-            if not resume_skills:
-                logger.warning("No skills found in resume!")
-                resume_skills = {}  # Ensure it's an empty dict, not None
-                
-            logger.info(f"Resume skills extracted: {len(resume_skills)} skills found")
-            logger.debug(f"Resume skills: {resume_skills}")
-            
-            # Step 4: Perform gap analysis (with or without semantic matching)
-            logger.info("Performing skill gap analysis...")
-            
-            if use_semantic:
-                # Use semantic matching with vector embeddings
-                gap_analysis = enhanced_gap_analyzer.identify_semantic_skill_gaps(
-                    job_skills if job_skills else {}, 
-                    resume_skills if resume_skills else {}
-                )
-                analysis_type = "semantic"
-            else:
-                # Use traditional exact matching
-                from agents.gap_agent import identify_skill_gaps
-                gap_analysis = identify_skill_gaps(
-                    job_skills if job_skills else {}, 
-                    resume_skills if resume_skills else {}
-                )
-                analysis_type = "exact"
-                
-            if not gap_analysis:
-                logger.warning("Gap analysis returned None!")
-                # Provide a default structure
-                gap_analysis = {
-                    "missing_skills": {},
-                    "matching_skills": {},
-                    "resume_only_skills": {}
-                }
-                
-            logger.info(f"Gap analysis complete: {len(gap_analysis.get('missing_skills', {}))} missing skills identified")
-            
-            # Step 5: Get learning resources for missing skills
-            missing_skills = gap_analysis.get('missing_skills', {})
-            if missing_skills:
-                logger.info("Getting learning resources for missing skills...")
-                learning_resources = get_learning_resources(missing_skills, job_description)
-                logger.info("Learning resources retrieved")
-            else:
-                learning_resources = "No missing skills identified. Your resume already matches the job requirements well!"
-            
-            # Clean up the temporary file
-            if temp_path and os.path.exists(temp_path):
-                os.unlink(temp_path)
-                temp_path = None
-            
-            # Create the response data
-            response_data = {
-                "status": "success",
-                "file_name": file.filename,
-                "analysis_type": analysis_type,
-                "analysis": {
-                    "job_skills": job_skills if job_skills else {},
-                    "resume_skills": resume_skills if resume_skills else {},
-                    "matching_skills": gap_analysis.get('matching_skills', {}),
-                    "missing_skills": gap_analysis.get('missing_skills', {}),
-                    "resume_only_skills": gap_analysis.get('resume_only_skills', {}),
-                    "similarity_threshold": gap_analysis.get('similarity_threshold', None)
-                },
-                "llm_output": learning_resources
-            }
-            
-            # Convert NumPy types to Python types before returning
-            return convert_numpy_to_python(response_data)
-            
-        except Exception as process_error:
-            logger.error(f"Error processing documents: {str(process_error)}")
-            logger.error(traceback.format_exc())
-            
-            # Clean up the temporary file if it exists
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
-                temp_path = None
-                
+    Multipart form fields:
+      file            — PDF resume
+      job_description — raw job-description text
+      use_semantic    — true (default): cosine-similarity matching;
+                        false: exact string matching only
+    """
+    temp_path: str | None = None
+
+    try:
+        # ----------------------------------------------------------------
+        # 1. Validate inputs before touching the file
+        # ----------------------------------------------------------------
+        jd = (job_description or "").strip()
+        if not jd:
+            raise HTTPException(status_code=422, detail="job_description cannot be empty.")
+        if len(jd) < 50:
+            raise HTTPException(
+                status_code=422,
+                detail="job_description is too short — please provide a full job posting (≥50 characters).",
+            )
+
+        logger.info(
+            "Analysis request: file=%s  jd_chars=%d  semantic=%s",
+            file.filename, len(jd), use_semantic,
+        )
+
+        # ----------------------------------------------------------------
+        # 2. Save the uploaded PDF to a temp file
+        # ----------------------------------------------------------------
+        raw_bytes = await file.read()
+        if not raw_bytes:
+            raise HTTPException(status_code=422, detail="Uploaded file is empty.")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(raw_bytes)
+            temp_path = tmp.name
+
+        # ----------------------------------------------------------------
+        # 3. Extract text from PDF
+        # ----------------------------------------------------------------
+        resume_text = extract_text_from_pdf(temp_path)
+
+        if resume_text.startswith("Error") or resume_text.startswith("No text"):
             return convert_numpy_to_python({
                 "status": "error",
-                "message": "Failed to process documents",
-                "error": str(process_error),
-                "llm_output": "An error occurred while processing your documents. Please ensure your resume is a valid PDF and try again."
+                "message": (
+                    "Could not extract text from the uploaded PDF. "
+                    "Please make sure it is a text-based (not scanned/image) PDF."
+                ),
+                "llm_output": None,
             })
-        
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Unexpected error in job_analyzer: {str(e)}\n{error_details}")
-        
-        # Clean up the temporary file if it exists
+
+        if len(resume_text.strip()) < 50:
+            return convert_numpy_to_python({
+                "status": "error",
+                "message": (
+                    "The extracted resume text is too short to analyse. "
+                    "Check that your PDF contains selectable text rather than scanned images."
+                ),
+                "llm_output": None,
+            })
+
+        # ----------------------------------------------------------------
+        # 4. Extract skills from both documents
+        # ----------------------------------------------------------------
+        job_skills = analyze_job_description(jd)
+        resume_skills = analyze_resume(resume_text)
+
+        if not job_skills:
+            return convert_numpy_to_python({
+                "status": "error",
+                "message": (
+                    "No recognisable technical skills were found in the job description. "
+                    "Please provide a more detailed posting."
+                ),
+                "llm_output": None,
+            })
+
+        logger.info(
+            "Extracted %d job skills and %d resume skills",
+            len(job_skills), len(resume_skills),
+        )
+
+        # ----------------------------------------------------------------
+        # 5. Gap analysis
+        # ----------------------------------------------------------------
+        if use_semantic:
+            gap_analysis = _get_semantic_analyzer().identify_semantic_skill_gaps(
+                job_skills, resume_skills
+            )
+            analysis_type = "semantic"
+        else:
+            gap_analysis = identify_skill_gaps(job_skills, resume_skills)
+            analysis_type = "exact"
+
+        # ----------------------------------------------------------------
+        # 6. Learning resources (best-effort — never blocks the response)
+        # ----------------------------------------------------------------
+        learning_resources = get_learning_resources(
+            gap_analysis.get("missing_skills", {}), jd
+        )
+
+        # ----------------------------------------------------------------
+        # 7. Build and return response
+        # ----------------------------------------------------------------
+        response_data = {
+            "status": "success",
+            "file_name": file.filename,
+            "analysis_type": analysis_type,
+            "analysis": {
+                "job_skills": job_skills,
+                "resume_skills": resume_skills,
+                "matching_skills": gap_analysis.get("matching_skills", {}),
+                "missing_skills": gap_analysis.get("missing_skills", {}),
+                "resume_only_skills": gap_analysis.get("resume_only_skills", {}),
+                "similarity_threshold": gap_analysis.get("similarity_threshold"),
+            },
+            "llm_output": learning_resources,
+        }
+        return convert_numpy_to_python(response_data)
+
+    except HTTPException:
+        raise  # pass validation errors straight through
+
+    except Exception as exc:
+        logger.error("Unexpected error in job_analyzer:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal server error: {exc}")
+
+    finally:
         if temp_path and os.path.exists(temp_path):
             try:
                 os.unlink(temp_path)
-            except:
+            except OSError:
                 pass
-            
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-@router.get("/similar-skills/{skill}")
-async def find_similar_skills(skill: str, limit: int = 5):
-    """
-    Find skills similar to the given skill using vector embeddings.
-    
-    Args:
-        skill: The skill to find similar skills for
-        limit: Maximum number of results to return
-    """
-    try:
-        gap_analyzer = EnhancedGapAnalyzer()
-        similar_skills = gap_analyzer.find_similar_skills(skill, limit)
-        
-        # Convert NumPy types to Python types before returning
-        result = {
-            "status": "success",
-            "skill": skill,
-            "similar_skills": similar_skills
-        }
-        return convert_numpy_to_python(result)
-        
-    except Exception as e:
-        logger.error(f"Error finding similar skills: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to find similar skills: {str(e)}")

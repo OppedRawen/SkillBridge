@@ -1,85 +1,78 @@
 import os
-from openai import OpenAI
 import logging
 from dotenv import load_dotenv
 
-# Configure logging
+load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
 
-# Initialize the OpenAI client with the new SDK format
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-def register_resource_agent_functions(user_proxy):
+def get_learning_resources(missing_skills: dict, job_description: str) -> str:
     """
-    Register resource recommendation functions with the UserProxyAgent.
-    
+    Generate learning resource recommendations for the top missing skills.
+
+    Calls OpenAI GPT-3.5-turbo when OPENAI_API_KEY is available.
+    Returns a plain-text fallback message when the key is absent or the
+    API call fails, so the rest of the analysis is always returned to the
+    caller regardless.
+
     Args:
-        user_proxy: AutoGen UserProxyAgent
-    """
-    function_map = {
-        "get_learning_resources": get_learning_resources
-    }
-    
-    user_proxy.register_function(function_map=function_map)
+        missing_skills:  {skill_text: weight} sorted high→low — only the
+                         top 5 are sent to the model
+        job_description: original job description text for context
 
-def get_learning_resources(missing_skills, job_description):
-    """
-    Get learning resources for missing skills using ChatGPT.
-    
-    Args:
-        missing_skills (dict): Dictionary of missing skills with weights
-        job_description (str): The original job description for context
-        
     Returns:
-        str: Formatted resource recommendations from ChatGPT
+        str  —  formatted recommendations, or a graceful fallback string
     """
-    # Prepare the top missing skills (limit to top 5 for focus)
     top_skills = list(missing_skills.keys())[:5]
-    
+
     if not top_skills:
-        return "No skill gaps identified! Your resume already matches the job requirements well."
-    
-    # Construct prompt for ChatGPT
-    prompt = f"""
-    I'm applying for a job with the following description:
-    
-    {job_description}
-    
-    I need learning resources for these skills that are missing from my resume:
-    {', '.join(top_skills)}
-    
-    For each skill, please provide:
-    1. A concise explanation of why this skill is important for the role
-    2. Two recommended online courses (free or paid)
-    3. One book recommendation
-    4. One practical project idea to develop this skill
-    
-    Format your response in a clear, easy-to-read way. Focus on practical advice.
-    """
-    
-    # Call ChatGPT API using the new client syntax (OpenAI SDK 1.0.0+)
+        return "No skill gaps identified — your resume already matches the job requirements well!"
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.warning("OPENAI_API_KEY not set; returning skill list without LLM recommendations")
+        return (
+            "Skills to develop: " + ", ".join(top_skills) + ".\n\n"
+            "Tip: set OPENAI_API_KEY in your .env file to receive personalised course, "
+            "book, and project recommendations for each skill."
+        )
+
+    prompt = f"""I am applying for a role with the following description:
+
+{job_description}
+
+The skills most missing from my resume are: {", ".join(top_skills)}.
+
+For each skill please provide:
+1. One sentence explaining why it matters for this role
+2. Two online courses (free or paid) with URLs if possible
+3. One book recommendation
+4. One small project idea to practise the skill
+
+Keep the response concise and practical."""
+
     try:
-        logger.info(f"Calling OpenAI API for learning resources on: {', '.join(top_skills)}")
-        
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a career coach specializing in skill development and learning resources."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "You are a career coach who gives concise, practical skill-development advice.",
+                },
+                {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=1200
+            max_tokens=1200,
         )
-        
-        # Extract and return the response content with the new schema
         recommendations = response.choices[0].message.content
-        logger.info("Successfully retrieved learning resources from OpenAI")
-        
+        logger.info("OpenAI recommendations retrieved successfully")
         return recommendations
-        
-    except Exception as e:
-        logger.error(f"Error getting resource recommendations: {str(e)}")
-        return f"Error getting resource recommendations: {str(e)}"
+
+    except Exception as exc:
+        logger.error("OpenAI API call failed: %s", exc)
+        return (
+            f"Learning resources temporarily unavailable ({type(exc).__name__}). "
+            f"Skills to develop: {', '.join(top_skills)}."
+        )
