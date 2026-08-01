@@ -1,0 +1,5 @@
+tests/
+.pytest_cache/
+pytest.ini
+requirements-ci.txt
+src/models/fine_tuned_sentence_transformer/
