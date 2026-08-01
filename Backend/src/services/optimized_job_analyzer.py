@@ -1,3 +1,5 @@
+import re
+import traceback
 import spacy
 import logging
 from spacy.matcher import PhraseMatcher
@@ -27,22 +29,36 @@ class SkillExtractorSingleton:
         self.skill_extractor = SkillExtractor(self.nlp, SKILL_DB, PhraseMatcher)
         logger.info("SpaCy model and SkillNER extractors loaded successfully")
     
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """Normalize whitespace and encoding before SkillNER annotation."""
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        # Replace common bullet/arrow characters that confuse SkillNER's tokeniser
+        text = re.sub(r'[•●◦▸▹►◉✓✗✔✖★☆▪▫]', ' ', text)
+        # Collapse multiple spaces/tabs on a single line to one space
+        text = re.sub(r'[^\S\n]+', ' ', text)
+        # Strip each line and drop more than one consecutive blank line
+        lines = [line.strip() for line in text.split('\n')]
+        text = re.sub(r'\n{3,}', '\n\n', '\n'.join(lines))
+        return text.strip()
+
     def analyze_job_description(self, text):
         """
         Extract and weight skills from job description text.
-        
+
         Args:
             text (str): Job description text
-            
+
         Returns:
             dict: Dictionary of skills with weights
         """
         if not text:
             logger.warning("Empty job description text provided")
             return {}
-            
+
+        text = self._normalize_text(text)
         logger.info(f"Analyzing job description: {len(text)} characters")
-        
+
         try:
             # Extract annotations
             annotations = self.skill_extractor.annotate(text)
@@ -79,7 +95,10 @@ class SkillExtractorSingleton:
             return skill_weights
             
         except Exception as e:
-            logger.error(f"Error analyzing job description: {str(e)}")
+            logger.error(
+                "Error analyzing job description: %s\n%s",
+                e, traceback.format_exc(),
+            )
             return {}
     
     def analyze_resume(self, resume_text):
@@ -96,8 +115,9 @@ class SkillExtractorSingleton:
             logger.error(f"Invalid resume text: {type(resume_text)}")
             return {}
         
+        resume_text = self._normalize_text(resume_text)
         logger.info(f"Analyzing resume text: {len(resume_text)} characters")
-        
+
         try:
             # Extract annotations using SkillNER
             annotations = self.skill_extractor.annotate(resume_text)
@@ -127,8 +147,10 @@ class SkillExtractorSingleton:
             return resume_skills
             
         except Exception as e:
-            logger.error(f"Error analyzing resume: {str(e)}")
-            # Return empty dict instead of None
+            logger.error(
+                "Error analyzing resume: %s\n%s",
+                e, traceback.format_exc(),
+            )
             return {}
     
     def _compute_skill_weight(self, doc, skill_indices):
@@ -154,7 +176,13 @@ class SkillExtractorSingleton:
         
         base_weight = 1.0
         window_size = 5  # how many tokens to look around
-        
+
+        # doc_node_id from SkillNER is usually a list; guard against int or empty
+        if isinstance(skill_indices, int):
+            skill_indices = [skill_indices]
+        if not skill_indices:
+            return base_weight
+
         start_token = min(skill_indices)
         end_token = max(skill_indices)
         
