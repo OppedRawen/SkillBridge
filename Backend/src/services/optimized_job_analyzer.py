@@ -1,3 +1,5 @@
+import re
+import traceback
 import spacy
 import logging
 from spacy.matcher import PhraseMatcher
@@ -27,60 +29,82 @@ class SkillExtractorSingleton:
         self.skill_extractor = SkillExtractor(self.nlp, SKILL_DB, PhraseMatcher)
         logger.info("SpaCy model and SkillNER extractors loaded successfully")
     
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """Normalize whitespace and encoding before SkillNER annotation."""
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        # Replace common bullet/arrow characters that confuse SkillNER's tokeniser
+        text = re.sub(r'[•●◦▸▹►◉✓✗✔✖★☆▪▫]', ' ', text)
+        # Collapse multiple spaces/tabs on a single line to one space
+        text = re.sub(r'[^\S\n]+', ' ', text)
+        # Strip each line and drop more than one consecutive blank line
+        lines = [line.strip() for line in text.split('\n')]
+        text = re.sub(r'\n{3,}', '\n\n', '\n'.join(lines))
+        return text.strip()
+
+    def _annotate_sentence(self, sentence: str, threshold: float = 0.8):
+        """
+        Run SkillNER on a single sentence and return (skill_text, token_indices) pairs.
+
+        SkillNER has a known IndexError when the lemmatized doc tokenizes differently
+        from the original cleaned doc (e.g. "3+" → ["3","+"] on re-tokenization).
+        Processing one sentence at a time limits each crash to that one sentence.
+        """
+        annotations = self.skill_extractor.annotate(sentence)
+        raw = []
+        for fm in annotations["results"]["full_matches"]:
+            raw.append((fm["doc_node_value"], fm["doc_node_id"]))
+        for ng in annotations["results"]["ngram_scored"]:
+            if ng["score"] >= threshold:
+                raw.append((ng["doc_node_value"], ng["doc_node_id"]))
+        return raw
+
     def analyze_job_description(self, text):
         """
         Extract and weight skills from job description text.
-        
+
         Args:
             text (str): Job description text
-            
+
         Returns:
             dict: Dictionary of skills with weights
         """
         if not text:
             logger.warning("Empty job description text provided")
             return {}
-            
-        logger.info(f"Analyzing job description: {len(text)} characters")
-        
-        try:
-            # Extract annotations
-            annotations = self.skill_extractor.annotate(text)
-            
-            # Combine full_matches & ngram_scored
-            raw_skills = []  # store (skill_text, token_indices)
-            threshold = 0.8
-            
-            for fm in annotations["results"]["full_matches"]:
-                raw_skills.append((fm["doc_node_value"], fm["doc_node_id"]))
-            
-            for ng in annotations["results"]["ngram_scored"]:
-                if ng["score"] >= threshold:
-                    raw_skills.append((ng["doc_node_value"], ng["doc_node_id"]))
-            
-            logger.debug(f"Extracted {len(raw_skills)} raw skills")
-            
-            # Convert text to SpaCy doc for context analysis
-            doc = self.nlp(text)
-            
-            # Calculate weights & aggregate
-            skill_weights = {}
+
+        text = self._normalize_text(text)
+        logger.info("Analyzing job description: %d characters", len(text))
+
+        # Split into sentences so a SkillNER IndexError in one sentence
+        # doesn't discard results from the entire document.
+        sentences = [s.text.strip() for s in self.nlp(text).sents if s.text.strip()]
+        skill_weights = {}
+        skipped = 0
+
+        for sentence in sentences:
+            try:
+                raw_skills = self._annotate_sentence(sentence)
+            except Exception as e:
+                logger.warning(
+                    "SkillNER failed on JD sentence (skipping): %r — %s", sentence[:80], e
+                )
+                skipped += 1
+                continue
+
+            sent_doc = self.nlp(sentence)
             for skill_text, token_indices in raw_skills:
-                weight = self._compute_skill_weight(doc, token_indices)
+                weight = self._compute_skill_weight(sent_doc, token_indices)
                 lower_skill = skill_text.lower()
-                
-                # If skill is repeated, take the max weight
                 if lower_skill not in skill_weights:
                     skill_weights[lower_skill] = weight
                 else:
                     skill_weights[lower_skill] = max(skill_weights[lower_skill], weight)
-            
-            logger.info(f"Analyzed job description and found {len(skill_weights)} skills")
-            return skill_weights
-            
-        except Exception as e:
-            logger.error(f"Error analyzing job description: {str(e)}")
-            return {}
+
+        if skipped:
+            logger.warning("Skipped %d/%d sentences due to SkillNER errors", skipped, len(sentences))
+        logger.info("Analyzed job description and found %d skills", len(skill_weights))
+        return skill_weights
     
     def analyze_resume(self, resume_text):
         """
@@ -96,40 +120,31 @@ class SkillExtractorSingleton:
             logger.error(f"Invalid resume text: {type(resume_text)}")
             return {}
         
-        logger.info(f"Analyzing resume text: {len(resume_text)} characters")
-        
-        try:
-            # Extract annotations using SkillNER
-            annotations = self.skill_extractor.annotate(resume_text)
-            
-            # Extract skills from annotations with a confidence threshold
-            resume_skills = {}
-            threshold = 0.8
-            
-            # Add debug info
-            logger.debug(f"Full matches: {len(annotations['results']['full_matches'])}")
-            logger.debug(f"NGram matches: {len(annotations['results']['ngram_scored'])}")
-            
-            # Process full matches (high confidence)
-            for match in annotations["results"]["full_matches"]:
-                skill = match["doc_node_value"].lower()
-                resume_skills[skill] = 1.0  # Base weight for skills from resume
-            
-            # Process ngram matches above threshold
-            for match in annotations["results"]["ngram_scored"]:
-                if match["score"] >= threshold:
-                    skill = match["doc_node_value"].lower()
-                    resume_skills[skill] = 1.0
-            
-            logger.info(f"Extracted {len(resume_skills)} skills from resume")
-            logger.debug(f"Resume skills: {resume_skills}")
-            
-            return resume_skills
-            
-        except Exception as e:
-            logger.error(f"Error analyzing resume: {str(e)}")
-            # Return empty dict instead of None
-            return {}
+        resume_text = self._normalize_text(resume_text)
+        logger.info("Analyzing resume text: %d characters", len(resume_text))
+
+        sentences = [s.text.strip() for s in self.nlp(resume_text).sents if s.text.strip()]
+        resume_skills = {}
+        skipped = 0
+
+        for sentence in sentences:
+            try:
+                raw_skills = self._annotate_sentence(sentence)
+            except Exception as e:
+                logger.warning(
+                    "SkillNER failed on resume sentence (skipping): %r — %s", sentence[:80], e
+                )
+                skipped += 1
+                continue
+
+            for skill_text, _ in raw_skills:
+                skill = skill_text.lower()
+                resume_skills[skill] = 1.0
+
+        if skipped:
+            logger.warning("Skipped %d/%d sentences due to SkillNER errors", skipped, len(sentences))
+        logger.info("Extracted %d skills from resume", len(resume_skills))
+        return resume_skills
     
     def _compute_skill_weight(self, doc, skill_indices):
         """
@@ -154,7 +169,13 @@ class SkillExtractorSingleton:
         
         base_weight = 1.0
         window_size = 5  # how many tokens to look around
-        
+
+        # doc_node_id from SkillNER is usually a list; guard against int or empty
+        if isinstance(skill_indices, int):
+            skill_indices = [skill_indices]
+        if not skill_indices:
+            return base_weight
+
         start_token = min(skill_indices)
         end_token = max(skill_indices)
         

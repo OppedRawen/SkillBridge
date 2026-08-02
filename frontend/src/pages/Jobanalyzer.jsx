@@ -35,11 +35,18 @@ const Jobanalyzer = () => {
 
     try {
       const response = await axios.post('http://127.0.0.1:8000/jobs/jobAnalyzer', formData);
-      setResults(response.data);
+      const data = response.data;
+      if (data.status === 'error') {
+        setError(data.message || 'Analysis failed. Please try again.');
+        setResults(null);
+      } else {
+        setResults(data);
+      }
       setLoading(false);
     } catch (error) {
       console.error('Error uploading data:', error);
-      setError('An error occurred while processing your request. Please try again.');
+      const detail = error.response?.data?.detail;
+      setError(detail || 'An error occurred while processing your request. Please try again.');
       setLoading(false);
     }
   };
